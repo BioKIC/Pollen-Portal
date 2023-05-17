@@ -223,7 +223,7 @@ UPDATE IGNORE fmvouchers v INNER JOIN fmchklsttaxalink c ON v.clid = c.clid AND 
   SET v.clTaxaID = c.clTaxaID
   WHERE v.clTaxaID IS NULL;
 
-#Fix if following statement falis: DELETE FROM fmvouchers WHERE clTaxaID IS NULL;
+#Fix if following statement falis: DELETE FROM fmvouchers WHERE clTaxaID IS NULL
 ALTER TABLE `fmvouchers` 
   CHANGE COLUMN `clTaxaID` `clTaxaID` INT(10) UNSIGNED NOT NULL ,
   CHANGE COLUMN `CLID` `CLID` INT(10) UNSIGNED NULL ;
@@ -774,7 +774,6 @@ ALTER TABLE `omoccurrences`
   ADD CONSTRAINT `FK_omoccurrences_uid`  FOREIGN KEY (`observerUid`)  REFERENCES `users` (`uid`);
 
 
-
 #DROP TABLE IF EXISTS `portaloccurrences`
 #DROP TABLE IF EXISTS `portalpublications`
 #DROP TABLE IF EXISTS `portalindex`
@@ -874,6 +873,8 @@ ALTER TABLE `taxa`
   CHANGE COLUMN `Author` `author` VARCHAR(150) NOT NULL DEFAULT '';
 
 UPDATE taxa SET kingdomName = "" WHERE kingdomName IS NULL;
+
+UPDATE taxa SET rankID = 0 WHERE rankID IS NULL;
 
 ALTER TABLE `taxa` 
   CHANGE COLUMN `kingdomName` `kingdomName` VARCHAR(45) NOT NULL DEFAULT '' ,
