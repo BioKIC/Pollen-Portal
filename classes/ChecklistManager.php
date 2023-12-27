@@ -23,6 +23,7 @@ class ChecklistManager extends Manager{
 	private $limitImagesToVouchers = false;
 	private $showVouchers = false;
 	private $showAlphaTaxa = false;
+	private $showSubgenera = false;
 	private $searchCommon = false;
 	private $searchSynonyms = true;
 	private $filterArr = array();
@@ -47,19 +48,22 @@ class ChecklistManager extends Manager{
 			$this->clid = $clid;
 			$this->setMetaData();
 			//Get children checklists
-			$sqlBase = 'SELECT ch.clidchild, cl2.name '.
-				'FROM fmchecklists cl INNER JOIN fmchklstchildren ch ON cl.clid = ch.clid '.
-				'INNER JOIN fmchecklists cl2 ON ch.clidchild = cl2.clid '.
-				'WHERE (cl2.type != "excludespp") AND cl.clid IN(';
+			$sqlBase = 'SELECT ch.clidchild, cl2.name
+				FROM fmchecklists cl INNER JOIN fmchklstchildren ch ON cl.clid = ch.clid
+				INNER JOIN fmchecklists cl2 ON ch.clidchild = cl2.clid
+				WHERE (cl2.type != "excludespp") AND (ch.clid != ch.clidchild) AND cl.clid IN(';
 			$sql = $sqlBase.$this->clid.')';
+			$cnt = 0;
 			do{
-				$childStr = "";
+				$childStr = '';
 				$rsChild = $this->conn->query($sql);
 				while($r = $rsChild->fetch_object()){
 					$this->childClidArr[$r->clidchild] = $r->name;
 					$childStr .= ','.$r->clidchild;
 				}
 				$sql = $sqlBase.substr($childStr,1).')';
+				$cnt++;
+				if($cnt > 20) break;
 			}while($childStr);
 		}
 	}
@@ -321,6 +325,12 @@ class ChecklistManager extends Manager{
 				}
 				$rs->free();
 			}
+			if($this->showSubgenera){
+				$this->setSubgenera();
+				uasort($this->taxaList, function($a, $b) {
+					return $a['sciname'] <=> $b['sciname'];
+				});
+			}
 		}
 		return $this->taxaList;
 	}
@@ -329,11 +339,16 @@ class ChecklistManager extends Manager{
 		if($this->taxaList){
 			$matchedArr = array();
 			if($this->limitImagesToVouchers){
+				$clidStr = $this->clid;
+				if($this->childClidArr){
+					$clidStr .= ','.implode(',',array_keys($this->childClidArr));
+				}
 				$sql = 'SELECT i.tid, i.url, i.thumbnailurl, i.originalurl
 					FROM images i INNER JOIN omoccurrences o ON i.occid = o.occid
 					INNER JOIN fmvouchers v ON o.occid = v.occid
 					INNER JOIN fmchklsttaxalink cl ON v.clTaxaID = cl.clTaxaID
-					WHERE (cl.clid = 2) AND (i.tid IN('.implode(',',array_keys($this->taxaList)).'))';
+					WHERE (cl.clid = '.$clidStr.') AND (i.tid IN('.implode(',',array_keys($this->taxaList)).'))
+					ORDER BY i.sortOccurrence, i.sortSequence';
 				$matchedArr = $this->setImageSubset($sql);
 			}
 			if($missingArr = array_diff(array_keys($this->taxaList),$matchedArr)){
@@ -346,7 +361,7 @@ class ChecklistManager extends Manager{
 				$matchedArr = $this->setImageSubset($sql);
 				if($missingArr = array_diff(array_keys($this->taxaList),$matchedArr)){
 					//Get children images
-					$sql = 'SELECT i2.tid, i.url, i.thumbnailurl FROM images i INNER JOIN '.
+					$sql = 'SELECT DISTINCT i2.tid, i.url, i.thumbnailurl FROM images i INNER JOIN '.
 						'(SELECT ts1.parenttid AS tid, SUBSTR(MIN(CONCAT(LPAD(i.sortsequence,6,"0"),i.imgid)),7) AS imgid '.
 						'FROM taxstatus ts1 INNER JOIN taxstatus ts2 ON ts1.tidaccepted = ts2.tidaccepted '.
 						'INNER JOIN images i ON ts2.tid = i.tid '.
@@ -361,7 +376,6 @@ class ChecklistManager extends Manager{
 	private function setImageSubset($sql){
 		$matchTidArr = array();
 		if($this->taxaList){
-			//echo $sql;
 			$rs = $this->conn->query($sql);
 			while($r = $rs->fetch_object()){
 				if(!in_array($r->tid,$matchTidArr)){
@@ -410,6 +424,20 @@ class ChecklistManager extends Manager{
 			foreach($tempArr as $k => $vArr){
 				$this->taxaList[$k]['syn'] = implode(', ',$vArr);
 			}
+		}
+	}
+
+	private function setSubgenera(){
+		$sql = 'SELECT DISTINCT l.tid, t.sciname, p.sciname as parent
+			FROM fmchklsttaxalink l INNER JOIN taxaenumtree e ON l.tid = e.tid
+			INNER JOIN taxa t ON l.tid = t.tid
+			INNER JOIN taxa p ON e.parenttid = p.tid
+			WHERE e.taxauthid = 1 AND p.rankid = 190 AND l.tid IN('.implode(',',array_keys($this->taxaList)).')';
+		if($rs = $this->conn->query($sql)){
+			while($r = $rs->fetch_object()){
+				if(!strpos($r->sciname, '(')) $this->taxaList[$r->tid]['sciname'] = $r->parent . substr($this->taxaList[$r->tid]['sciname'], strpos($this->taxaList[$r->tid]['sciname'], ' '));
+			}
+			$rs->free();
 		}
 	}
 
@@ -769,6 +797,10 @@ class ChecklistManager extends Manager{
 
 	public function setShowAlphaTaxa($bool){
 		if($bool) $this->showAlphaTaxa = true;
+	}
+
+	public function setShowSubgenera($bool){
+		if($bool) $this->showSubgenera = true;
 	}
 
 	public function setSearchCommon($bool){
